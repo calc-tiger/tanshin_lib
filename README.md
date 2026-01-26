@@ -1,4 +1,4 @@
-# tanshin.lib
+# tanshin_lib
 
 日本の適時開示情報（TDnet）などで公開される「決算短信」PDFから、財務データを抽出・解析するPythonライブラリです。
 
@@ -22,7 +22,7 @@ pip install git+https://github.com/calc-tiger/tanshin.lib.git
 from tanshin_lib import analyze_pdf_url
 
 # PDFのURLを指定して解析
-target_url = "https://www.release.tdnet.info/inbs/140120260114533704.pdf"
+target_url = "https://www.release.tdnet.info/inbs/XXXXXXX.pdf"
 financial_data = analyze_pdf_url(target_url)
 print(financial_data)
 ```
