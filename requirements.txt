@@ -1,0 +1,4 @@
+requests
+pandas
+pdfminer.six
+pdfplumber
