@@ -1,4 +1,4 @@
-# tanshin_lib
+# tanshin.lib
 
 日本の適時開示情報（TDnet）などで公開される「決算短信」PDFから、財務データを抽出・解析するPythonライブラリです。
 
@@ -11,9 +11,7 @@
 ## インストール
 
 ```bash
-git clone https://github.com/yourusername/tanshin_lib.git
-cd tanshin_lib
-pip install .
+pip install git+https://github.com/calc=tiger/tanshin.lib.git
 ```
 
 ## 使い方
