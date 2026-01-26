@@ -24,7 +24,6 @@ from tanshin_lib import analyze_pdf_url
 # PDFのURLを指定して解析
 target_url = "https://www.release.tdnet.info/inbs/XXXXXXX.pdf"
 financial_data = analyze_pdf_url(target_url)
-print(financial_data)
 ```
 
 ## 必要要件
