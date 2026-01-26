@@ -11,7 +11,7 @@
 ## インストール
 
 ```bash
-pip install git+https://github.com/calc=tiger/tanshin.lib.git
+pip install git+https://github.com/calc-tiger/tanshin.lib.git
 ```
 
 ## 使い方
