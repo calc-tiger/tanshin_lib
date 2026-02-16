@@ -22,13 +22,13 @@ def parse_financial_table(df):
 
     for i in range(len(df)):
         row_label = str(df.iloc[i, 0]).strip()
-        row_label_clean = row_label.replace(' ', '').replace('　', '') # 【追加】スペース除去
+        row_label_clean = row_label.replace(' ', '').replace('　', '') # スペース除去
 
         # 1. 第1列が期間・日付パターンかチェック
         if re.search(r'(?:19|20)\d{2}[^0-9]*[年\./]', row_label) or \
-           '通期' in row_label_clean or \  # 【変更】row_label -> row_label_clean
-           '四半期' in row_label_clean or \ # 【変更】row_label -> row_label_clean
-           '年度' in row_label_clean:     # 【変更】row_label -> row_label_clean
+           '通期' in row_label_clean or \
+           '四半期' in row_label_clean or \
+           '年度' in row_label_clean:
             first_data_row_idx = i
             break
 
