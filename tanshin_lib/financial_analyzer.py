@@ -21,12 +21,17 @@ def parse_financial_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     col_base_metric_names = [''] * len(df.columns)
 
     for c_idx in range(1, len(df.columns)):
-        metric_part_r0 = str(df.iloc[0,c_idx]).strip() if 0 < len(df) and c_idx < len(df.iloc[0]) else ''
-        metric_part_r1 = str(df.iloc[1,c_idx]).strip() if 1 < len(df) and c_idx < len(df.iloc[1]) else ''
+        header_parts = []
+        # データ開始行より前の行をすべてループ
+        for r in range(first_data_row_idx):
+            val = str(df.iloc[r, c_idx]).strip()
+            if val and val.lower() != 'nan' and val != 'None':
+                header_parts.append(val)
 
-        combined_metric_part = (metric_part_r0 + metric_part_r1).strip()
+        combined_metric_part ="".join(header_parts)
 
         is_suffix_only = False
+        
         if any(k in combined_metric_part for k in ['増減率', '前年比', '対前年', '同増減', '対前年同四半期', '対前年同期']):
              is_suffix_only = True
         elif re.fullmatch(r'[\(（]*[％%][\)）]*', combined_metric_part):
