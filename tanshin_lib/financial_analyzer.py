@@ -8,75 +8,116 @@ from typing import List, Dict, Any, Optional
 from .utils import get_text_robust, extract_ticker_from_text
 from .pdf_parser import extract_all_tables_as_df, expand_multiline_table
 
-def parse_financial_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
+def parse_financial_table(df):
     """
     展開された財務諸表DataFrameから、検出されたすべての数値指標とその増減率を抽出します。
+    ヘッダーの行数を動的に判定し、複数行にまたがるカラム名を結合します。
     """
     extracted_records = []
     if df.empty:
         return []
 
-    final_column_headers = ['period']
+    # --- Step 1: データ開始行の検出 (Detect Data Start Row) ---
+    first_data_row_idx = -1
 
-    col_base_metric_names = [''] * len(df.columns)
+    for i in range(len(df)):
+        row_label = str(df.iloc[i, 0]).strip()
+
+        if re.search(r'(?:19|20)\d{2}[^0-9]*[年\./]', row_label) or \
+           '通期' in row_label or \
+           '四半期' in row_label or \
+           '年度' in row_label:
+            first_data_row_idx = i
+            break
+
+        if len(df.columns) > 1:
+            numeric_count = 0
+            data_cols_count = len(df.columns) - 1
+            for val in df.iloc[i, 1:]:
+                s_val = str(val).strip().replace(',', '').replace('△', '-').replace('▲', '-').replace('－', '-')
+                if re.fullmatch(r'[-]?\d+(\.\d+)?%?', s_val) or s_val in ['-', '−', '―']:
+                    numeric_count += 1
+            if numeric_count / data_cols_count > 0.5:
+                first_data_row_idx = i
+                break
+
+    if first_data_row_idx == -1:
+        return []
+    if first_data_row_idx == 0:
+        first_data_row_idx = 1
+
+    # --- Step 2: カラムヘッダーの構築 ---
+    final_column_headers = ['period']
 
     for c_idx in range(1, len(df.columns)):
         header_parts = []
-        # データ開始行より前の行をすべてループ
         for r in range(first_data_row_idx):
             val = str(df.iloc[r, c_idx]).strip()
             if val and val.lower() != 'nan' and val != 'None':
                 header_parts.append(val)
 
-        combined_metric_part ="".join(header_parts)
-
-        is_suffix_only = False
+        full_header_text = "".join(header_parts)
         
-        if any(k in combined_metric_part for k in ['増減率', '前年比', '対前年', '同増減', '対前年同四半期', '対前年同期']):
-             is_suffix_only = True
-        elif re.fullmatch(r'[\(（]*[％%][\)）]*', combined_metric_part):
-             is_suffix_only = True
+        # --- ユニットサフィックスの初期判定 ---
+        unit_suffix = ""
+        if '百万円' in full_header_text:
+            unit_suffix = "_百万円"
+            full_header_text = full_header_text.replace('(百万円)', '').replace('（百万円）', '').replace('百万円', '')
+        elif '円銭' in full_header_text:
+            unit_suffix = "_円銭"
+            full_header_text = full_header_text.replace('(円銭)', '').replace('（円銭）', '').replace('円銭', '')
 
-        if combined_metric_part and not is_suffix_only:
-            col_base_metric_names[c_idx] = combined_metric_part
-        elif c_idx > 1 and col_base_metric_names[c_idx-1]:
-             col_base_metric_names[c_idx] = col_base_metric_names[c_idx-1]
-             if '増減率' not in col_base_metric_names[c_idx]:
-                  if is_suffix_only or not combined_metric_part:
-                      col_base_metric_names[c_idx] += '_増減率'
+        # --- サフィックスのみ（増減率など）かどうかの判定 ---
+        is_suffix_only = False
+        if re.fullmatch(r'[\(（]*[％%][\)）]*', full_header_text.strip()) or \
+           any(k in full_header_text for k in ['増減率', '前年比', '対前年', '同増減', '対前期']): 
+            is_suffix_only = True
 
-    for c_idx in range(1, len(df.columns)):
-        header_base = col_base_metric_names[c_idx]
-        unit_type_suffix = ""
+        # クリーンなヘッダー名作成
+        clean_header = full_header_text.replace(' ', '').replace('　', '').replace('\n', '')
 
-        if 2 < len(df) and c_idx < len(df.iloc[2]):
-            unit_cell_content = str(df.iloc[2, c_idx]).strip()
-            if '百万円' in unit_cell_content:
-                unit_type_suffix = '_百万円'
-            elif ('％' in unit_cell_content or '%' in unit_cell_content) and '増減率' not in header_base:
-                unit_type_suffix = '_増減率'
-            elif '円銭' in unit_cell_content:
-                unit_type_suffix = '_円銭'
+        # --- ヘッダー名の決定ロジック ---
+        # ヘッダーが空、またはサフィックスのみ（%など）の場合は、前の列名を引き継ぐ
+        if not clean_header or is_suffix_only:
+            if c_idx > 1:
+                prev_header_full = final_column_headers[-1]
+                # 前の列名から既存のサフィックスを除去してベース名を取得
+                prev_base = re.sub(r'_(百万円|円銭|増減率)$', '', prev_header_full)
+                # 重複回避の _1 等も除去したほうが安全だが、通常はsuffixの後につくのでここではbaseのみ
+                
+                clean_header = prev_base
+                
+                # 空欄またはサフィックスのみで引き継いだ場合、かつ通貨単位などがついていなければ「増減率」とみなす
+                if '増減率' not in unit_suffix:
+                    # すでに % があって unit_suffix が _増減率 になっている場合もあるのでチェック
+                    # もし unit_suffix が空なら、強制的に増減率扱いにする
+                     if unit_suffix == "":
+                         unit_suffix = "_増減率"
+            else:
+                clean_header = f"col_{c_idx}"
+        
+        # 明示的に増減率が含まれている場合の補正
+        if ('増減率' in full_header_text or '％' in full_header_text or '%' in full_header_text) and '増減率' not in unit_suffix:
+             unit_suffix = "_増減率"
 
-        constructed_header = (header_base + unit_type_suffix).strip('_')
-        if not constructed_header:
-            constructed_header = f"col_{c_idx}"
-
-        original_header = constructed_header
+        final_name = clean_header + unit_suffix
+        original_name = final_name
         counter = 1
-        while constructed_header in final_column_headers:
-            constructed_header = f"{original_header}_{counter}"
+        while final_name in final_column_headers:
+            final_name = f"{original_name}_{counter}"
             counter += 1
-        final_column_headers.append(constructed_header)
+        final_column_headers.append(final_name)
 
+    # --- Step 3: データの抽出 ---
     queued_labels = []
     persistent_pending_range_starts = {header: None for header in final_column_headers[1:]}
 
-    for i, row in df.iterrows():
+    for i in range(first_data_row_idx, len(df)):
+        row = df.iloc[i]
         row_label_text = str(row[0]).strip()
 
         is_period_label = False
-        if '年' in row_label_text or '期' in row_label_text or '通期' in row_label_text:
+        if '年' in row_label_text or '期' in row_label_text or '通期' in row_label_text or '年度' in row_label_text:
             is_period_label = True
 
         has_numeric_data = False
@@ -107,7 +148,7 @@ def parse_financial_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 normalized_val = cell_value_raw.replace('△', '-').replace('▲', '-').replace('－', '-').replace('＋', '').replace('+', '')
                 normalized_val = normalized_val.replace('～', '~')
 
-                if not normalized_val or normalized_val in ['-', '―', '−']:
+                if not normalized_val or normalized_val in ['-', '―', '−', 'nan', 'None']:
                     current_row_parsed_data[header] = None
                     persistent_pending_range_starts[header] = None
                     continue
@@ -144,9 +185,6 @@ def parse_financial_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 elif persistent_pending_range_starts[header] is not None:
                     persistent_pending_range_starts[header] = None
 
-                if normalized_val.endswith('%') or normalized_val.endswith('％'):
-                    normalized_val = normalized_val.rstrip('％%')
-
                 try:
                     if re.fullmatch(r'^-?[0-9,.]+$', normalized_val):
                         val_float = float(normalized_val.replace(',', ''))
@@ -174,17 +212,12 @@ def parse_financial_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             for header, current_val in current_row_parsed_data.items():
                 if header == 'period': continue
                 prev_val = last_record.get(header)
-
                 if prev_val is None and current_val is not None:
                     last_record[header] = current_val
                     merged_any = True
-                elif isinstance(prev_val, str) and prev_val.endswith('~') and \
-                     isinstance(current_val, str) and '~' in current_val and not current_val.endswith('~'):
-                    last_record[header] = current_val
-                    merged_any = True
-            if merged_any:
-                pass
+
     return extracted_records
+
 
 def _format_value_for_display(value):
     def _format_num_for_delta_display(num_str):
